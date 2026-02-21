@@ -384,7 +384,7 @@ Quax 现在支持通过 `options` 传入以下加速参数：
 - `df_threshold` (`float`, 默认 `1e-10`)：密度拟合保留特征值阈值。
 - `multi_gpu` (`bool`, 默认 `False`)：在 Hartree-Fock JK 构建阶段启用基于 `jax.pmap` 的多卡并行（例如 `8*A100 SXM`）。
 
-- `integral_algo` (`str`)：可选 `"libint_core"`、`"quax_core"`、`"e3nn"`。当选择 `"e3nn"` 时，四中心 ERI 使用基于 e3nn 思路的等变 pair-embedding 构造，整个 ERI 图保持 JAX 可微，从而可对 ERI 与总能量做全自动 Autodiff，无需显式 ERI 导数代码。
+- `integral_algo` (`str`)：可选 `"libint_core"`、`"quax_core"`、`"e3nn"`、`"e3nn_v2"`。当选择 `"e3nn"` 时，四中心 ERI 使用基于 e3nn 思路的等变 pair-embedding 构造，整个 ERI 图保持 JAX 可微，从而可对 ERI 与总能量做全自动 Autodiff，无需显式 ERI 导数代码。
 - `e3nn_options` (`dict`, 默认 `{}`)：控制 e3nn ERI 构造，支持 `rank`、`rbf_dim`、`rmax`、`seed`。
 
 示例：
@@ -433,4 +433,17 @@ from quax.integrals.e3nn_eri_data import build_e3nn_eri_dataset
 dataset = build_e3nn_eri_dataset(geoms, basis, source="quax")
 X = dataset["geometries"]
 Y = dataset["targets"]
+```
+
+
+### e3nn_eri_v2 与一键对比模块
+新增：
+- `quax.integrals.e3nn_eri_v2`：更强表达能力的 v2 原型（两层 MLP + richer pair features）。
+- `quax.integrals.e3nn_eri_compare.compare_e3nn_v1_v2`：在同一目标上对 v1/v2 训练并比较 MSE/MAE。
+
+示例：
+```python
+from quax.integrals.e3nn_eri_compare import compare_e3nn_v1_v2
+summary = compare_e3nn_v1_v2(geom, basis, target_eri, steps=100)
+print(summary["winner"], summary["v1"]["mse"], summary["v2"]["mse"])
 ```

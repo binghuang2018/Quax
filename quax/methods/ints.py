@@ -11,6 +11,7 @@ from ..integrals.basis_utils import build_basis_set
 from ..integrals.tei import tei_array 
 from ..integrals.oei import oei_arrays
 from ..integrals.e3nn_eri import e3nn_eri_array
+from ..integrals.e3nn_eri_v2 import e3nn_eri_v2_array
 
 from ..utils import get_deriv_vec_idx, get_required_deriv_vecs
 
@@ -128,6 +129,14 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
             S, T, V = oei_arrays(geom.reshape(-1,3),basis_dict,nuclear_charges)
             G = e3nn_eri_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
 
+        elif algo == 'e3nn_v2':
+            with open(xyz_path, 'r') as f:
+                tmp = f.read()
+            molecule = psi4.core.Molecule.from_string(tmp, 'xyz+')
+            basis_dict = build_basis_set(molecule, basis_name)
+            S, T, V = oei_arrays(geom.reshape(-1,3),basis_dict,nuclear_charges)
+            G = e3nn_eri_v2_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
+
         elif algo == 'quax_core':
             with open(xyz_path, 'r') as f:
                 tmp = f.read()
@@ -145,6 +154,8 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
         S, T, V = oei_arrays(geom.reshape(-1,3),basis_dict,nuclear_charges)
         if algo == 'e3nn':
             G = e3nn_eri_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
+        elif algo == 'e3nn_v2':
+            G = e3nn_eri_v2_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
         else:
             G = tei_array(geom.reshape(-1,3),basis_dict)
 
