@@ -376,3 +376,22 @@ If you use Quax in your research, we would appreciate a citation:
 We also kindly request you give credit to the projects which make up the dependencies of Quax.
 
 
+
+### 可选加速选项（Density Fitting / 多卡 GPU）
+Quax 现在支持通过 `options` 传入以下加速参数：
+
+- `density_fitting` (`bool`, 默认 `False`)：启用 DF 近似。当前已接入 HF / MP2 / CCSD / CCSD(T) 能量路径（`deriv_order=0`）。
+- `df_threshold` (`float`, 默认 `1e-10`)：密度拟合保留特征值阈值。
+- `multi_gpu` (`bool`, 默认 `False`)：在 Hartree-Fock JK 构建阶段启用基于 `jax.pmap` 的多卡并行（例如 `8*A100 SXM`）。
+
+示例：
+```python
+options = {
+    "integral_algo": "libint_core",
+    "density_fitting": True,
+    "df_threshold": 1e-9,
+    "multi_gpu": True,
+}
+energy = quax.core.energy(molecule, 'def2-svp', 'hf', options=options)
+```
+
