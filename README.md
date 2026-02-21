@@ -376,3 +376,26 @@ If you use Quax in your research, we would appreciate a citation:
 We also kindly request you give credit to the projects which make up the dependencies of Quax.
 
 
+
+### 可选加速选项（Density Fitting / 多卡 GPU）
+Quax 现在支持通过 `options` 传入以下加速参数：
+
+- `density_fitting` (`bool`, 默认 `False`)：启用 DF 近似。当前已接入 HF / MP2 / CCSD / CCSD(T) 能量路径（`deriv_order=0`）。
+- `df_threshold` (`float`, 默认 `1e-10`)：密度拟合保留特征值阈值。
+- `multi_gpu` (`bool`, 默认 `False`)：在 Hartree-Fock JK 构建阶段启用基于 `jax.pmap` 的多卡并行（例如 `8*A100 SXM`）。
+
+- `integral_algo` (`str`)：可选 `"libint_core"`、`"quax_core"`、`"e3nn"`。当选择 `"e3nn"` 时，四中心 ERI 使用基于 e3nn 思路的等变 pair-embedding 构造，整个 ERI 图保持 JAX 可微，从而可对 ERI 与总能量做全自动 Autodiff，无需显式 ERI 导数代码。
+- `e3nn_options` (`dict`, 默认 `{}`)：控制 e3nn ERI 构造，支持 `rank`、`rbf_dim`、`rmax`、`seed`。
+
+示例：
+```python
+options = {
+    "integral_algo": "e3nn",
+    "density_fitting": True,
+    "df_threshold": 1e-9,
+    "multi_gpu": True,
+    "e3nn_options": {"rank": 64, "rbf_dim": 12, "rmax": 8.0, "seed": 0},
+}
+energy = quax.core.energy(molecule, 'def2-svp', 'hf', options=options)
+```
+

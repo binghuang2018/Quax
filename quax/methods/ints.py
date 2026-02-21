@@ -10,6 +10,7 @@ import os
 from ..integrals.basis_utils import build_basis_set
 from ..integrals.tei import tei_array 
 from ..integrals.oei import oei_arrays
+from ..integrals.e3nn_eri import e3nn_eri_array
 
 from ..utils import get_deriv_vec_idx, get_required_deriv_vecs
 
@@ -20,11 +21,29 @@ if libint_imported:
     from ..external_integrals import OEI 
     from ..external_integrals import libint_interface
     from ..external_integrals import tmp_potential
-     
+
+
+def _density_fit_tei(G, threshold):
+    """Simple in-core density fitting / RI approximation for 4-index ERIs."""
+    nbf = G.shape[0]
+    Gmat = G.reshape(nbf * nbf, nbf * nbf)
+    evals, evecs = jnp.linalg.eigh(Gmat)
+    keep = evals > threshold
+    if not jnp.any(keep):
+        return G
+    vals = evals[keep]
+    vecs = evecs[:, keep]
+    B = vecs * jnp.sqrt(vals)
+    G_df = jnp.einsum('pP,qP->pq', B, B)
+    return G_df.reshape(nbf, nbf, nbf, nbf)
+
 
 def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv_order, options):
     # Load integral algo, decides to compute integrals in memory or use disk 
     algo = options['integral_algo']
+    use_df = options.get('density_fitting', False)
+    df_threshold = options.get('df_threshold', 1e-10)
+    e3nn_options = options.get('e3nn_options', {})
 
     if libint_imported and libint_interface.LIBINT2_MAX_DERIV_ORDER >= deriv_order:
         if algo == 'libint_core':
@@ -48,7 +67,6 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
                 V = tmp_potential(geom.reshape(-1,3),basis_dict,nuclear_charges)
             G = tei_obj.tei(geom)
             libint_interface.finalize()
-            return S, T, V, G
 
         elif algo == 'libint_disk' and deriv_order > 0:
             # Check disk for currently existing integral derivatives 
@@ -82,7 +100,7 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
                     libint_interface.eri_deriv_disk(deriv_order)
                     G = tei_obj.tei(geom)
                     libint_interface.finalize()
-    
+
                     with open(xyz_path, 'r') as f:
                         tmp = f.read()
                     molecule = psi4.core.Molecule.from_string(tmp, 'xyz+')
@@ -102,6 +120,14 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
         # TODO
         #elif algo == 'quax_disk':
 
+        elif algo == 'e3nn':
+            with open(xyz_path, 'r') as f:
+                tmp = f.read()
+            molecule = psi4.core.Molecule.from_string(tmp, 'xyz+')
+            basis_dict = build_basis_set(molecule, basis_name)
+            S, T, V = oei_arrays(geom.reshape(-1,3),basis_dict,nuclear_charges)
+            G = e3nn_eri_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
+
         elif algo == 'quax_core':
             with open(xyz_path, 'r') as f:
                 tmp = f.read()
@@ -117,7 +143,16 @@ def compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv
         molecule = psi4.core.Molecule.from_string(tmp, 'xyz+')
         basis_dict = build_basis_set(molecule, basis_name)
         S, T, V = oei_arrays(geom.reshape(-1,3),basis_dict,nuclear_charges)
-        G = tei_array(geom.reshape(-1,3),basis_dict)
+        if algo == 'e3nn':
+            G = e3nn_eri_array(geom.reshape(-1,3), basis_dict, options=e3nn_options)
+        else:
+            G = tei_array(geom.reshape(-1,3),basis_dict)
+
+    if use_df:
+        if deriv_order == 0:
+            G = _density_fit_tei(G, df_threshold)
+        else:
+            print("density_fitting=True currently only applies to deriv_order=0; using exact derivative ERIs.")
     return S, T, V, G
 
 def check_disk(geom,basis_name,xyz_path,deriv_order,address=None):

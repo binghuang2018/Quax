@@ -72,7 +72,11 @@ def perturbative_triples(T1, T2, V, fock_Od, fock_Vd):
       return S.pT
 
 def rccsd_t(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_order=0):
+    if options.get('density_fitting', False) and deriv_order > 0:
+        print("density_fitting=True currently only applies to deriv_order=0 in CCSD(T); using exact derivative ERIs.")
     E_ccsd, T1, T2, V, fock_Od, fock_Vd = rccsd(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_order=deriv_order, return_aux_data=True)
+    if options.get('density_fitting', False) and deriv_order == 0:
+        print("Using density-fitted CCSD(T) energy pathway.")
     pT = perturbative_triples(T1, T2, V, fock_Od, fock_Vd)
     #print("(T) energy correction:     ", pT)
     #print("CCSD(T) total energy:      ", E_ccsd + pT)
