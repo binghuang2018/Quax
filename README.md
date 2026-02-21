@@ -447,3 +447,19 @@ from quax.integrals.e3nn_eri_compare import compare_e3nn_v1_v2
 summary = compare_e3nn_v1_v2(geom, basis, target_eri, steps=100)
 print(summary["winner"], summary["v1"]["mse"], summary["v2"]["mse"])
 ```
+
+
+### e3nn_eri_v2 物理约束与显式因子化
+`e3nn_eri_v2` 现在直接参数化三指标因子 `B_{pq}^Q`，并显式构造
+`G_{pqrs}=\sum_Q B_{pq}^Q B_{rs}^Q`，在 pair-space 上更自然地保持半正定结构。
+
+训练损失支持以下物理约束项（可加权组合）：
+- 对称性残差损失（`symmetry_residual_loss`）
+- Coulomb metric 误差（`coulomb_metric_loss`）
+- 能量/梯度联合损失（`energy_gradient_joint_loss`，含二电子能项，支持目标梯度监督）
+
+数据模块 `e3nn_eri_data` 新增端到端管线：
+- 参考标签源：`source="libint" | "quax" | "e3nn"`
+- 数据标准化：`compute_dataset_stats` / `normalize_dataset`
+- 训练/验证/测试切分：`split_dataset`
+- 一键构造：`prepare_e3nn_eri_pipeline_dataset`

@@ -43,12 +43,23 @@ def init_e3nn_eri_v2_params(in_dim, hidden_dim=128, rank=64, seed=0):
     return {'w1': w1, 'b1': b1, 'w2': w2, 'b2': b2}
 
 
-def e3nn_eri_v2_predict(geom, basis, params, rbf_dim=12, rmax=8.0):
+def e3nn_eri_v2_factors(geom, basis, params, rbf_dim=12, rmax=8.0):
+    """Return explicitly parameterized factors B[p,q,Q]."""
     feats = build_pair_features_v2(geom, basis, rbf_dim=rbf_dim, rmax=rmax)
     h = jnp.tanh(jnp.einsum('pqf,fh->pqh', feats, params['w1']) + params['b1'])
-    phi = jnp.tanh(jnp.einsum('pqh,hr->pqr', h, params['w2']) + params['b2'])
-    phi = 0.5 * (phi + jnp.swapaxes(phi, 0, 1))
-    G = jnp.einsum('pqk,rsk->pqrs', phi, phi)
+    B = jnp.tanh(jnp.einsum('pqh,hr->pqr', h, params['w2']) + params['b2'])
+    # Ensure B_pqQ = B_qpQ
+    B = 0.5 * (B + jnp.swapaxes(B, 0, 1))
+    return B
+
+
+def e3nn_eri_v2_predict(geom, basis, params, rbf_dim=12, rmax=8.0):
+    """
+    Explicit PSD-like construction in pair space:
+      G[p,q,r,s] = sum_Q B[p,q,Q] * B[r,s,Q]
+    """
+    B = e3nn_eri_v2_factors(geom, basis, params, rbf_dim=rbf_dim, rmax=rmax)
+    G = jnp.einsum('pqQ,rsQ->pqrs', B, B)
     G = 0.25 * (G + G.transpose(1, 0, 2, 3) + G.transpose(0, 1, 3, 2) + G.transpose(2, 3, 0, 1))
     return G
 
