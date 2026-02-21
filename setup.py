@@ -20,6 +20,9 @@ if __name__ == "__main__":
             'tests': [
                 'pytest-cov',
             ],
+            'e3nn': [
+                'e3nn-jax>=0.20.0',
+            ],
         },
 
         tests_require=[

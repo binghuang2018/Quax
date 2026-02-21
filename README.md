@@ -376,3 +376,109 @@ If you use Quax in your research, we would appreciate a citation:
 We also kindly request you give credit to the projects which make up the dependencies of Quax.
 
 
+
+### 可选加速选项（Density Fitting / 多卡 GPU）
+Quax 现在支持通过 `options` 传入以下加速参数：
+
+- `density_fitting` (`bool`, 默认 `False`)：启用 DF 近似。当前已接入 HF / MP2 / CCSD / CCSD(T) 能量路径（`deriv_order=0`）。
+- `df_threshold` (`float`, 默认 `1e-10`)：密度拟合保留特征值阈值。
+- `multi_gpu` (`bool`, 默认 `False`)：在 Hartree-Fock JK 构建阶段启用基于 `jax.pmap` 的多卡并行（例如 `8*A100 SXM`）。
+
+- `integral_algo` (`str`)：可选 `"libint_core"`、`"quax_core"`、`"e3nn"`、`"e3nn_v2"`。当选择 `"e3nn"` 时，四中心 ERI 使用基于 e3nn 思路的等变 pair-embedding 构造，整个 ERI 图保持 JAX 可微，从而可对 ERI 与总能量做全自动 Autodiff，无需显式 ERI 导数代码。
+- `e3nn_options` (`dict`, 默认 `{}`)：控制 e3nn ERI 构造，支持 `rank`、`rbf_dim`、`rmax`、`seed`。
+
+示例：
+```python
+options = {
+    "integral_algo": "e3nn",
+    "density_fitting": True,
+    "df_threshold": 1e-9,
+    "multi_gpu": True,
+    "e3nn_options": {"rank": 64, "rbf_dim": 12, "rmax": 8.0, "seed": 0},
+}
+energy = quax.core.energy(molecule, 'def2-svp', 'hf', options=options)
+```
+
+
+
+### e3nn_eri 训练与测试模块
+新增 `quax.integrals.e3nn_eri_train` 模块，提供：
+- `train_e3nn_eri`：对 e3nn 风格 ERI 参数进行训练（MSE + L2）
+- `evaluate_e3nn_eri`：输出 MSE/MAE 指标
+- `build_pair_features` / `e3nn_eri_predict`：便于自定义训练循环
+
+最小示例：
+```python
+from quax.integrals.e3nn_eri_train import train_e3nn_eri, evaluate_e3nn_eri
+from quax.integrals.e3nn_eri import e3nn_eri_array
+
+# geom: (natom,3) JAX array, basis: quax basis dict
+target = e3nn_eri_array(geom, basis, options={"rank": 32})
+params, history = train_e3nn_eri(geom, basis, target, steps=100, rank=32)
+metrics = evaluate_e3nn_eri(geom, basis, params, target)
+print(metrics["mse"], metrics["mae"])
+```
+
+
+### e3nn_eri 训练数据构建模块
+新增 `quax.integrals.e3nn_eri_data`，用于批量构建训练数据：
+- `build_eri_target`：构建单个几何的目标 ERI（`source="quax"` 或 `"e3nn"`）
+- `build_e3nn_eri_dataset`：从多组几何生成 `{"geometries", "targets"}` 数据集
+- `build_dataset_from_psi4_molecule`：从 `psi4.Molecule` + 基组名快速构建数据集
+
+最小示例：
+```python
+from quax.integrals.e3nn_eri_data import build_e3nn_eri_dataset
+
+dataset = build_e3nn_eri_dataset(geoms, basis, source="quax")
+X = dataset["geometries"]
+Y = dataset["targets"]
+```
+
+
+### e3nn_eri_v2 与一键对比模块
+新增：
+- `quax.integrals.e3nn_eri_v2`：更强表达能力的 v2 原型（两层 MLP + richer pair features）。
+- `quax.integrals.e3nn_eri_compare.compare_e3nn_v1_v2`：在同一目标上对 v1/v2 训练并比较 MSE/MAE。
+
+示例：
+```python
+from quax.integrals.e3nn_eri_compare import compare_e3nn_v1_v2
+summary = compare_e3nn_v1_v2(geom, basis, target_eri, steps=100)
+print(summary["winner"], summary["v1"]["mse"], summary["v2"]["mse"])
+```
+
+
+### e3nn_eri_v2 物理约束与显式因子化
+`e3nn_eri_v2` 现在直接参数化三指标因子 `B_{pq}^Q`，并显式构造
+`G_{pqrs}=\sum_Q B_{pq}^Q B_{rs}^Q`，在 pair-space 上更自然地保持半正定结构。
+
+训练损失支持以下物理约束项（可加权组合）：
+- 对称性残差损失（`symmetry_residual_loss`）
+- Coulomb metric 误差（`coulomb_metric_loss`）
+- 能量/梯度联合损失（`energy_gradient_joint_loss`，含二电子能项，支持目标梯度监督）
+
+数据模块 `e3nn_eri_data` 新增端到端管线：
+- 参考标签源：`source="libint" | "quax" | "e3nn"`
+- 数据标准化：`compute_dataset_stats` / `normalize_dataset`
+- 训练/验证/测试切分：`split_dataset`
+- 一键构造：`prepare_e3nn_eri_pipeline_dataset`
+
+
+### PySCF 自动数据获取 + 训练测试 + 学习曲线
+新增 `quax.integrals.e3nn_eri_pyscf` 模块，支持：
+- 自动获取训练标签：ERI 值与其几何梯度（基于 PySCF，梯度采用有限差分自动生成）
+- 数据标准化与切分：`standardize_dataset` / `split_dataset`
+- 训练与测试：`train_e3nn_on_dataset` / `evaluate_e3nn_on_dataset`
+- 学习曲线：`learning_curve_vs_samples`（观察误差随训练样本规模变化）
+- NH3/SVP 直接演示：`nh3_svp_demo`
+
+
+无 `psi4` 依赖的独立 demo 脚本：
+- `scripts/nh3_svp_pyscf_demo.py`
+
+示例：
+```bash
+python scripts/nh3_svp_pyscf_demo.py --n-samples 12 --steps 30 --sample-sizes 2 4 6 8 10
+```
+该脚本直接基于 `PySCF` 采样 NH3/SVP 的 ERI 与有限差分梯度，完成训练/测试并输出学习曲线（可用时保存 png）。

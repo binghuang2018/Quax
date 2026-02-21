@@ -38,6 +38,10 @@ def check_options(options):
                        'damp_factor': 0.5,
                        'spectral_shift': True,
                        'integral_algo': 'libint_core',
+                       'density_fitting': False,
+                       'df_threshold': 1e-10,
+                       'multi_gpu': False,
+                       'e3nn_options': {},
                       }
 
     for key in options.keys():
@@ -341,4 +345,3 @@ def partial_derivative(molecule, basis_name, method, deriv_order, partial, optio
     """
     partial_deriv = compute(molecule, basis_name, method, options, deriv_order, partial)
     return partial_deriv
-

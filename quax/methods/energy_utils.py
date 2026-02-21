@@ -71,3 +71,40 @@ def cartesian_product(*arrays):
     '''
     tmp = jnp.asarray(jnp.meshgrid(*arrays, indexing='ij')).reshape(len(arrays),-1).T
     return tmp
+
+
+def density_fit_ao_factors(G, threshold=1e-10):
+    """
+    Build AO 3-index DF/CD-like factors B[Q,p,q] from 4-index ERIs G[p,q,r,s]
+    by low-rank decomposition of the flattened ERI super-matrix.
+    """
+    nbf = G.shape[0]
+    Gmat = G.reshape(nbf * nbf, nbf * nbf)
+    evals, evecs = jnp.linalg.eigh(Gmat)
+    keep = evals > threshold
+    vals = evals[keep]
+    vecs = evecs[:, keep]
+    if vals.shape[0] == 0:
+        vals = evals[-1:]
+        vecs = evecs[:, -1:]
+    B = vecs * jnp.sqrt(vals)
+    return B.T.reshape(-1, nbf, nbf)
+
+
+def density_fit_mo_blocks(Bao, C, ndocc):
+    """Build CC-style MO ERI blocks from AO DF factors."""
+    Cocc = C[:, :ndocc]
+    Cvir = C[:, ndocc:]
+
+    Boo = jnp.einsum('Qpq,pi,qj->Qij', Bao, Cocc, Cocc, optimize='optimal')
+    Bov = jnp.einsum('Qpq,pi,qa->Qia', Bao, Cocc, Cvir, optimize='optimal')
+    Bvv = jnp.einsum('Qpq,pa,qb->Qab', Bao, Cvir, Cvir, optimize='optimal')
+
+    Voooo = jnp.einsum('Qij,Qkl->ijkl', Boo, Boo, optimize='optimal')
+    Vooov = jnp.einsum('Qij,Qka->ijka', Boo, Bov, optimize='optimal')
+    Voovv = jnp.einsum('Qij,Qab->ijab', Boo, Bvv, optimize='optimal')
+    Vovov = jnp.einsum('Qia,Qjb->iajb', Bov, Bov, optimize='optimal')
+    Vovvv = jnp.einsum('Qia,Qbc->iabc', Bov, Bvv, optimize='optimal')
+    Vvvvv = jnp.einsum('Qab,Qcd->abcd', Bvv, Bvv, optimize='optimal')
+
+    return (Voooo, Vooov, Voovv, Vovov, Vovvv, Vvvvv), Bov
