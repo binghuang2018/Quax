@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.experimental import loops
 import psi4
 
-from .energy_utils import nuclear_repulsion, partial_tei_transformation, tei_transformation
+from .energy_utils import nuclear_repulsion, partial_tei_transformation, tei_transformation, density_fit_ao_factors, density_fit_mo_blocks
 from .hartree_fock import restricted_hartree_fock
 
 def rccsd(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_order=0, return_aux_data=False):
@@ -19,10 +19,17 @@ def rccsd(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_or
     o = slice(0, ndocc)
     v = slice(ndocc, nbf)
 
+    use_df = options.get('density_fitting', False)
+    df_threshold = options.get('df_threshold', 1e-10)
+
     # Save slices of two-electron repulsion integrals in MO basis
-    V = tei_transformation(V,C)
-    V = jnp.swapaxes(V,1,2)
-    V = (V[o,o,o,o], V[o,o,o,v], V[o,o,v,v], V[o,v,o,v], V[o,v,v,v], V[v,v,v,v])
+    if use_df:
+        Bao = density_fit_ao_factors(V, threshold=df_threshold)
+        V, _ = density_fit_mo_blocks(Bao, C, ndocc)
+    else:
+        V = tei_transformation(V,C)
+        V = jnp.swapaxes(V,1,2)
+        V = (V[o,o,o,o], V[o,o,o,v], V[o,o,v,v], V[o,v,o,v], V[o,v,v,v], V[v,v,v,v])
 
     fock_Od = eps[o]
     fock_Vd = eps[v]

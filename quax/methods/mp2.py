@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.experimental import loops
 import psi4
 
-from .energy_utils import nuclear_repulsion, partial_tei_transformation, tei_transformation, cartesian_product
+from .energy_utils import nuclear_repulsion, partial_tei_transformation, tei_transformation, cartesian_product, density_fit_ao_factors
 from .hartree_fock import restricted_hartree_fock
 
 def restricted_mp2(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_order=0):
@@ -15,7 +15,17 @@ def restricted_mp2(geom, basis_name, xyz_path, nuclear_charges, charge, options,
     nvirt = G.shape[0] - ndocc
     nbf = G.shape[0]
 
-    G = partial_tei_transformation(G, C[:,:ndocc],C[:,ndocc:],C[:,:ndocc],C[:,ndocc:])
+    use_df = options.get('density_fitting', False)
+    df_threshold = options.get('df_threshold', 1e-10)
+
+    if use_df:
+        Bao = density_fit_ao_factors(G, threshold=df_threshold)
+        Cocc = C[:, :ndocc]
+        Cvir = C[:, ndocc:]
+        Bia = jnp.einsum('Qpq,pi,qa->Qia', Bao, Cocc, Cvir, optimize='optimal')
+        G = jnp.einsum('Qia,Qjb->iajb', Bia, Bia, optimize='optimal')
+    else:
+        G = partial_tei_transformation(G, C[:,:ndocc],C[:,ndocc:],C[:,:ndocc],C[:,ndocc:])
 
     # Create tensor dim (occ,vir,occ,vir) of all possible orbital energy denominators
     eps_occ, eps_vir = eps[:ndocc], eps[ndocc:]
