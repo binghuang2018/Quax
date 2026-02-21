@@ -399,3 +399,22 @@ options = {
 energy = quax.core.energy(molecule, 'def2-svp', 'hf', options=options)
 ```
 
+
+
+### e3nn_eri 训练与测试模块
+新增 `quax.integrals.e3nn_eri_train` 模块，提供：
+- `train_e3nn_eri`：对 e3nn 风格 ERI 参数进行训练（MSE + L2）
+- `evaluate_e3nn_eri`：输出 MSE/MAE 指标
+- `build_pair_features` / `e3nn_eri_predict`：便于自定义训练循环
+
+最小示例：
+```python
+from quax.integrals.e3nn_eri_train import train_e3nn_eri, evaluate_e3nn_eri
+from quax.integrals.e3nn_eri import e3nn_eri_array
+
+# geom: (natom,3) JAX array, basis: quax basis dict
+target = e3nn_eri_array(geom, basis, options={"rank": 32})
+params, history = train_e3nn_eri(geom, basis, target, steps=100, rank=32)
+metrics = evaluate_e3nn_eri(geom, basis, params, target)
+print(metrics["mse"], metrics["mae"])
+```
