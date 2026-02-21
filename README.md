@@ -463,3 +463,12 @@ print(summary["winner"], summary["v1"]["mse"], summary["v2"]["mse"])
 - 数据标准化：`compute_dataset_stats` / `normalize_dataset`
 - 训练/验证/测试切分：`split_dataset`
 - 一键构造：`prepare_e3nn_eri_pipeline_dataset`
+
+
+### PySCF 自动数据获取 + 训练测试 + 学习曲线
+新增 `quax.integrals.e3nn_eri_pyscf` 模块，支持：
+- 自动获取训练标签：ERI 值与其几何梯度（基于 PySCF，梯度采用有限差分自动生成）
+- 数据标准化与切分：`standardize_dataset` / `split_dataset`
+- 训练与测试：`train_e3nn_on_dataset` / `evaluate_e3nn_on_dataset`
+- 学习曲线：`learning_curve_vs_samples`（观察误差随训练样本规模变化）
+- NH3/SVP 直接演示：`nh3_svp_demo`
