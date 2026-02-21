@@ -15,8 +15,11 @@ def restricted_mp2(geom, basis_name, xyz_path, nuclear_charges, charge, options,
     nvirt = G.shape[0] - ndocc
     nbf = G.shape[0]
 
-    use_df = options.get('density_fitting', False)
+    use_df = options.get('density_fitting', False) and deriv_order == 0
     df_threshold = options.get('df_threshold', 1e-10)
+
+    if options.get('density_fitting', False) and deriv_order > 0:
+        print("density_fitting=True currently only applies to deriv_order=0 in MP2; using exact derivative ERIs.")
 
     if use_df:
         Bao = density_fit_ao_factors(G, threshold=df_threshold)

@@ -19,8 +19,11 @@ def rccsd(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_or
     o = slice(0, ndocc)
     v = slice(ndocc, nbf)
 
-    use_df = options.get('density_fitting', False)
+    use_df = options.get('density_fitting', False) and deriv_order == 0
     df_threshold = options.get('df_threshold', 1e-10)
+
+    if options.get('density_fitting', False) and deriv_order > 0:
+        print("density_fitting=True currently only applies to deriv_order=0 in CCSD; using exact derivative ERIs.")
 
     # Save slices of two-electron repulsion integrals in MO basis
     if use_df:
