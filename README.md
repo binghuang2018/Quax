@@ -418,3 +418,19 @@ params, history = train_e3nn_eri(geom, basis, target, steps=100, rank=32)
 metrics = evaluate_e3nn_eri(geom, basis, params, target)
 print(metrics["mse"], metrics["mae"])
 ```
+
+
+### e3nn_eri 训练数据构建模块
+新增 `quax.integrals.e3nn_eri_data`，用于批量构建训练数据：
+- `build_eri_target`：构建单个几何的目标 ERI（`source="quax"` 或 `"e3nn"`）
+- `build_e3nn_eri_dataset`：从多组几何生成 `{"geometries", "targets"}` 数据集
+- `build_dataset_from_psi4_molecule`：从 `psi4.Molecule` + 基组名快速构建数据集
+
+最小示例：
+```python
+from quax.integrals.e3nn_eri_data import build_e3nn_eri_dataset
+
+dataset = build_e3nn_eri_dataset(geoms, basis, source="quax")
+X = dataset["geometries"]
+Y = dataset["targets"]
+```
