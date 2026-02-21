@@ -7,22 +7,62 @@ import psi4
 from .ints import compute_integrals
 from .energy_utils import nuclear_repulsion, cholesky_orthogonalization
 
+
+def _jk_build_cpu(G, D):
+    jk_build = jax.vmap(
+        jax.vmap(lambda x, y: jnp.tensordot(x, y, axes=[(0, 1), (0, 1)]), in_axes=(0, None)),
+        in_axes=(0, None),
+    )
+    JK = 2 * jk_build(G, D)
+    JK -= jk_build(G.transpose((0, 2, 1, 3)), D)
+    return JK
+
+
+def _jk_build_multi_gpu(G, D):
+    ndev = jax.local_device_count()
+    if ndev <= 1:
+        return _jk_build_cpu(G, D)
+
+    nbf = G.shape[0]
+    pad = (ndev - (nbf % ndev)) % ndev
+    if pad:
+        G = jnp.pad(G, ((0, pad), (0, 0), (0, 0), (0, 0)))
+
+    nbf_padded = G.shape[0]
+    chunk = nbf_padded // ndev
+
+    G_sharded = G.reshape(ndev, chunk, G.shape[1], G.shape[2], G.shape[3])
+
+    @jax.pmap
+    def local_jk(g_local, D_global):
+        j_part = jax.vmap(
+            jax.vmap(lambda x, y: jnp.tensordot(x, y, axes=[(0, 1), (0, 1)]), in_axes=(0, None)),
+            in_axes=(0, None),
+        )(g_local, D_global)
+        k_part = jax.vmap(
+            jax.vmap(lambda x, y: jnp.tensordot(x, y, axes=[(0, 1), (0, 1)]), in_axes=(0, None)),
+            in_axes=(0, None),
+        )(g_local.transpose((0, 2, 1, 3)), D_global)
+        return 2 * j_part - k_part
+
+    D_repl = jnp.broadcast_to(D, (ndev, D.shape[0], D.shape[1]))
+    JK = local_jk(G_sharded, D_repl).reshape(nbf_padded, nbf_padded)
+    if pad:
+        JK = JK[:nbf, :nbf]
+    return JK
+
+
 def restricted_hartree_fock(geom, basis_name, xyz_path, nuclear_charges, charge, options, deriv_order=0, return_aux_data=False):
     # Load keyword options
     maxit = options['maxit']
     damping = options['damping']
     damp_factor = options['damp_factor']
     spectral_shift = options['spectral_shift']
+    multi_gpu = options.get('multi_gpu', False)
     convergence = 1e-10
 
     nelectrons = int(jnp.sum(nuclear_charges)) - charge
     ndocc = nelectrons // 2
-
-    # If we are doing MP2 or CCSD after, might as well use jit-compiled JK-build, since HF will not be memory bottleneck
-    if return_aux_data:
-        jk_build = jax.jit(jax.vmap(jax.vmap(lambda x,y: jnp.tensordot(x, y, axes=[(0,1),(0,1)]), in_axes=(0,None)), in_axes=(0,None)))
-    else: 
-        jk_build = jax.vmap(jax.vmap(lambda x,y: jnp.tensordot(x, y, axes=[(0,1),(0,1)]), in_axes=(0,None)), in_axes=(0,None))
 
     S, T, V, G = compute_integrals(geom, basis_name, xyz_path, nuclear_charges, charge, deriv_order, options)
     # Canonical orthogonalization via cholesky decomposition
@@ -69,8 +109,10 @@ def restricted_hartree_fock(geom, basis_name, xyz_path, nuclear_charges, charge,
                 D = Dold * damp_factor + D * damp_factor
                 Dold = D * 1
         # Build JK matrix: 2 * J - K
-        JK = 2 * jk_build(G, D)
-        JK -= jk_build(G.transpose((0,2,1,3)), D)
+        if multi_gpu:
+            JK = _jk_build_multi_gpu(G, D)
+        else:
+            JK = _jk_build_cpu(G, D)
         # Build Fock
         F = H + JK
         # Update convergence error
@@ -94,4 +136,3 @@ def restricted_hartree_fock(geom, basis_name, xyz_path, nuclear_charges, charge,
         return E_scf
     else:
         return E_scf, C, eps, G
-
